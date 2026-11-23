@@ -1,0 +1,8 @@
+{
+  "name": "pianohub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-time multiplayer piano rooms with Web MIDI support",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "ws": "^8.18.0" }
+}
