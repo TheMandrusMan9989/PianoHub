@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PianoHub — Multiplayer Piano</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<header class="topbar"><div class="brand"><div class="brand-mark">♫</div><span>Piano<span class="accent">Hub</span></span><small>BETA</small></div><div class="top-status"><i></i> MULTIPLAYER PIANO</div></header>
+<main id="lobby" class="home">
+  <section class="hero"><div class="eyebrow">✦ PLAY TOGETHER, FROM ANYWHERE</div><h1>Your piano.<br><span>Your people.</span></h1><p>Open a room, invite your friends, and make some noise. Every note travels live.</p><div class="pills"><span>♙ Live multiplayer</span><span>⌁ MIDI ready</span><span>♫ Virtual piano</span></div></section>
+  <section class="card"><div class="card-head"><div><div class="eyebrow">GET IN THE FLOW</div><h2>Jump into a session</h2></div><div class="orb">♫</div></div>
+    <label for="nickname">Your display name</label><input id="nickname" maxlength="20" placeholder="What should people call you?">
+    <div class="divider">START SOMETHING NEW</div><label for="roomname">Room name</label><input id="roomname" maxlength="32" value="Late Night Jam">
+    <button id="create" class="primary">＋ Create a room</button>
+    <div class="divider">OR JOIN YOUR FRIENDS</div><label for="code">Room code</label><div class="join-row"><input id="code" maxlength="6" placeholder="ENTER CODE"><button id="join" class="secondary">↗ Join</button></div>
+    <div id="lobby-error" class="error"></div><p class="note">No account needed. Just pick a name and play.</p>
+  </section>
+  <section class="how"><div><b>01</b><h3>Create or join</h3><p>Share a six-character room code with your friends.</p></div><div><b>02</b><h3>Connect your piano</h3><p>Use the screen keys, computer keyboard, or a MIDI controller.</p></div><div><b>03</b><h3>Jam in real time</h3><p>Hear notes and see keys light up as everyone plays.</p></div></section>
+</main>
+<main id="session" class="session hidden">
+  <div class="toolbar"><button id="leave" class="secondary">← Leave room</button><div class="room-title"><i></i><strong id="room-title">Piano Jam</strong></div><button id="copy" class="secondary code">------ ⧉ Invite</button></div>
+  <div class="columns"><section class="play">
+    <div class="session-head"><div><div class="eyebrow">YOU'RE IN THE ROOM</div><h2>Make some music.</h2></div><button id="mute" class="secondary">◖ Sound on</button></div>
+    <div class="players-line"><div id="avatars" class="avatars"></div><span id="player-count">1 pianist playing</span></div>
+    <div class="keyboard-card"><div class="keyboard-head"><span>♫ VIRTUAL PIANO</span><span>5 OCTAVES · C2 — C7</span></div><div class="piano-scroll"><div id="piano" class="piano"></div></div><div class="hint">Computer keys: <kbd>1</kbd>–<kbd>m</kbd> play white notes · hold <kbd>Shift</kbd> for black notes · hold keys together for chords</div></div>
+    <div class="device"><div class="device-icon">⌁</div><div class="device-info"><b>MIDI keyboard</b><span id="midi-status">Checking MIDI support…</span></div><select id="midi-select" class="hidden"></select><i id="midi-dot"></i></div>
+    <div class="sf2-panel">
+      <div class="sf2-heading"><div><b>♫ ROOM SOUNDFONT</b><span id="sf2-status">No shared SF2 loaded · using default sound</span></div><span class="sf2-badge">SF2</span></div>
+      <div class="sf2-actions"><label class="sf2-upload" for="sf2-file">↑ Upload / replace SF2</label><input id="sf2-file" type="file" accept=".sf2,application/octet-stream"><small>Up to 48 MB · everyone in this room will hear it</small></div>
+    </div>
+  </section><aside class="side">
+    <section class="side-card"><div class="side-title">♙ <b>In this room</b><span id="side-count">1</span></div><div id="player-list" class="player-list"></div></section>
+    <section class="side-card chat"><div class="side-title">▤ <b>Room chat</b></div><div id="messages" class="messages"><div class="empty">Say hi to the room 👋</div></div><form id="chat-form" class="chat-form"><input id="chat-input" maxlength="240" placeholder="Send a message…"><button>↗</button></form></section>
+    <div class="tip">♫ <span><b>Little tip</b><br>Wear headphones if you're playing with friends in the same room to avoid audio feedback.</span></div>
+  </aside></div>
+</main>
+<footer><span>PIANOHUB © 2026</span><span>MAKE MUSIC TOGETHER ♥</span></footer>
+<script src="./app.js"></script>
+</body></html>
