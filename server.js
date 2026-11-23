@@ -46,7 +46,37 @@ wss.on('connection', ws => {
   ws.player = null;
   ws.on('message', (raw, isBinary) => {
     const currentRoom = rooms.get(ws.roomCode);
-    if (isBinary) return; // SF2 files are loaded locally by each player and are never shared.
+    // SF2 packets are binary: 4-byte big-endian JSON-header length, JSON metadata, then SF2 bytes.
+    // Keep each player's uploaded banks in room memory and only forward the bank they select.
+    if (isBinary) {
+      if (!currentRoom || !ws.player) return;
+      try {
+        const packet = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+        if (packet.length < 16 || packet.length > MAX_SF2_SIZE + 1024) return;
+        const headerLength = packet.readUInt32BE(0);
+        if (headerLength < 2 || headerLength > 2048 || 4 + headerLength >= packet.length) return;
+        const meta = JSON.parse(packet.toString('utf8', 4, 4 + headerLength));
+        if (meta.type !== 'soundfont' || String(meta.playerId) !== ws.player.id) return;
+        const id = cleanText(meta.soundfontId, 100);
+        const name = cleanText(meta.name, 120) || 'SoundFont.sf2';
+        const payloadOffset = 4 + headerLength;
+        // A valid SF2 is a RIFF container with the form type "sfbk".
+        if (!id || packet.toString('ascii', payloadOffset, payloadOffset + 4) !== 'RIFF' || packet.toString('ascii', payloadOffset + 8, payloadOffset + 12) !== 'sfbk') return;
+        const ownerFiles = currentRoom.soundfonts.get(ws.player.id) || new Map();
+        const existingBytes = [...ownerFiles.values()].reduce((sum, entry) => sum + entry.size, 0);
+        const old = ownerFiles.get(id);
+        const newTotal = existingBytes - (old?.size || 0) + (packet.length - 4 - headerLength);
+        if (newTotal > 128 * 1024 * 1024) {
+          send(ws, { type:'error', message:'Your room soundfont uploads exceed the 128 MB per-player limit. Remove an SF2 and try again.' });
+          return;
+        }
+        ownerFiles.set(id, { name, packet, size:packet.length - 4 - headerLength });
+        currentRoom.soundfonts.set(ws.player.id, ownerFiles);
+      } catch (error) {
+        console.error('Rejected invalid SF2 upload:', error.message);
+      }
+      return;
+    }
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
 
