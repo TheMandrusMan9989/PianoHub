@@ -6,6 +6,7 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
 const rooms = new Map();
+const MAX_SF2_SIZE = 48 * 1024 * 1024;
 
 function send(ws, data) {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(data));
@@ -39,28 +40,13 @@ const server = http.createServer((req, res) => {
   });
 });
 
-const MAX_SF2_SIZE = 48 * 1024 * 1024;
 const wss = new WebSocketServer({ server, maxPayload: MAX_SF2_SIZE + 1024 });
 wss.on('connection', ws => {
   ws.roomCode = null;
   ws.player = null;
-  ws.pendingSf2 = null;
   ws.on('message', (raw, isBinary) => {
     const currentRoom = rooms.get(ws.roomCode);
-    if (isBinary) {
-      if (!currentRoom || !ws.player || !ws.pendingSf2) return;
-      const buffer = Buffer.from(raw);
-      const pending = ws.pendingSf2;
-      ws.pendingSf2 = null;
-      if (buffer.length !== pending.size || buffer.length < 12 || buffer.length > MAX_SF2_SIZE || buffer.toString('ascii', 0, 4) !== 'RIFF' || buffer.toString('ascii', 8, 12) !== 'sfbk') {
-        return send(ws, { type: 'error', message: 'That file does not look like a valid SF2 soundfont.' });
-      }
-      currentRoom.sf2Buffer = buffer;
-      currentRoom.sf2Info = { name: pending.name, size: buffer.length, by: ws.player.name };
-      broadcast(currentRoom, { type: 'sf2-info', info: currentRoom.sf2Info });
-      for (const client of currentRoom.clients) { if (client.readyState === client.OPEN) client.send(buffer, { binary: true }); }
-      return;
-    }
+    if (isBinary) return; // SF2 files are loaded locally by each player and are never shared.
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
 
@@ -69,7 +55,7 @@ wss.on('connection', ws => {
       const roomName = cleanText(msg.roomName, 32) || 'Piano Jam';
       let code;
       do { code = makeCode(); } while (rooms.has(code));
-      const room = { code, name: roomName, clients: new Set(), players: new Map(), sf2Buffer: null, sf2Info: null };
+      const room = { code, name: roomName, clients: new Set(), players: new Map(), soundfonts: new Map() };
       rooms.set(code, room);
       joinRoom(ws, room, name, msg.playerId, msg.color);
       return;
@@ -85,21 +71,24 @@ wss.on('connection', ws => {
 
     const room = rooms.get(ws.roomCode);
     if (!room || !ws.player) return;
-    if (msg.type === 'sf2-upload-start') {
-      const name = cleanText(msg.name, 100) || 'Custom soundfont.sf2';
-      const size = Number(msg.size);
-      if (!name.toLowerCase().endsWith('.sf2') || !Number.isFinite(size) || size < 12 || size > MAX_SF2_SIZE) {
-        return send(ws, { type: 'error', message: 'Choose an SF2 file smaller than 48 MB.' });
-      }
-      ws.pendingSf2 = { name, size };
-      return;
-    }
     if (msg.type === 'note-on' || msg.type === 'note-off') {
       const note = Math.max(0, Math.min(127, Number(msg.note) || 0));
       broadcast(room, { type:msg.type, note, player:ws.player }, ws);
     } else if (msg.type === 'chat') {
       const text = cleanText(msg.text, 240);
       if (text) broadcast(room, { type:'chat', text, player:ws.player }, ws);
+    } else if (msg.type === 'soundfont-select') {
+      const id = cleanText(msg.soundfontId, 100);
+      const files = room.soundfonts.get(ws.player.id);
+      if (!id) {
+        ws.player.soundfontId = '';
+        broadcast(room, { type:'soundfont-select', playerId:ws.player.id, soundfontId:'' }, ws);
+      } else if (files && files.has(id)) {
+        ws.player.soundfontId = id;
+        const entry = files.get(id);
+        broadcast(room, { type:'soundfont-select', playerId:ws.player.id, soundfontId:id }, ws);
+        for (const client of room.clients) if (client !== ws && client.readyState === client.OPEN) client.send(entry.packet);
+      }
     } else if (msg.type === 'ping') {
       send(ws, { type:'pong' });
     }
@@ -110,6 +99,7 @@ wss.on('connection', ws => {
     if (!room || !ws.player) return;
     room.clients.delete(ws);
     room.players.delete(ws.player.id);
+    room.soundfonts.delete(ws.player.id);
     broadcast(room, { type:'leave', playerId:ws.player.id });
     if (room.clients.size === 0) rooms.delete(room.code);
   });
@@ -131,9 +121,11 @@ function joinRoom(ws, room, name, id, color) {
   room.players.set(player.id, player);
   send(ws, { type:'joined', room:{ code:room.code, name:room.name }, players:[...room.players.values()] });
   broadcast(room, { type:'join', player }, ws);
-  if (room.sf2Buffer && room.sf2Info) {
-    send(ws, { type: 'sf2-info', info: room.sf2Info });
-    ws.send(room.sf2Buffer, { binary: true });
+  // A newcomer receives the currently selected instrument for every existing player.
+  for (const existing of room.players.values()) {
+    if (existing.id === player.id || !existing.soundfontId) continue;
+    const entry = room.soundfonts.get(existing.id)?.get(existing.soundfontId);
+    if (entry) { send(ws, { type:'soundfont-select', playerId:existing.id, soundfontId:existing.soundfontId }); ws.send(entry.packet); }
   }
 }
 

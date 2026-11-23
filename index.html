@@ -23,17 +23,17 @@
   <div class="columns"><section class="play">
     <div class="session-head"><div><div class="eyebrow">YOU'RE IN THE ROOM</div><h2>Make some music.</h2></div><button id="mute" class="secondary">◖ Sound on</button></div>
     <div class="players-line"><div id="avatars" class="avatars"></div><span id="player-count">1 pianist playing</span></div>
-    <div class="keyboard-card"><div class="keyboard-head"><span>♫ VIRTUAL PIANO</span><span>5 OCTAVES · C2 — C7</span></div><div class="piano-scroll"><div id="piano" class="piano"></div></div><div class="hint">Computer keys: <kbd>1</kbd>–<kbd>m</kbd> play white notes · hold <kbd>Shift</kbd> for black notes · hold keys together for chords</div></div>
     <div class="device"><div class="device-icon">⌁</div><div class="device-info"><b>MIDI keyboard</b><span id="midi-status">Checking MIDI support…</span></div><select id="midi-select" class="hidden"></select><i id="midi-dot"></i></div>
     <div class="sf2-panel">
-      <div class="sf2-heading"><div><b>♫ ROOM SOUNDFONT</b><span id="sf2-status">No shared SF2 loaded · using default sound</span></div><span class="sf2-badge">SF2</span></div>
-      <div class="sf2-actions"><label class="sf2-upload" for="sf2-file">↑ Upload / replace SF2</label><input id="sf2-file" type="file" accept=".sf2,application/octet-stream"><small>Up to 48 MB · everyone in this room will hear it</small></div>
+      <div class="sf2-heading"><div><b>♫ MY SOUNDFONTS</b><span id="sf2-status">No personal SF2 selected · using default sound</span></div><span class="sf2-badge">SF2</span></div>
+      <div class="sf2-actions"><label class="sf2-upload" for="sf2-file">↑ Add SF2 files</label><input id="sf2-file" type="file" accept=".sf2,application/octet-stream" multiple><select id="sf2-select" aria-label="Choose your soundfont"><option value="">Default sound</option></select><small>Up to 48 MB each · friends hear your chosen instrument</small></div>
     </div>
   </section><aside class="side">
     <section class="side-card"><div class="side-title">♙ <b>In this room</b><span id="side-count">1</span></div><div id="player-list" class="player-list"></div></section>
     <section class="side-card chat"><div class="side-title">▤ <b>Room chat</b></div><div id="messages" class="messages"><div class="empty">Say hi to the room 👋</div></div><form id="chat-form" class="chat-form"><input id="chat-input" maxlength="240" placeholder="Send a message…"><button>↗</button></form></section>
     <div class="tip">♫ <span><b>Little tip</b><br>Wear headphones if you're playing with friends in the same room to avoid audio feedback.</span></div>
   </aside></div>
+  <section class="keyboard-card piano-dock"><div class="keyboard-head"><span>♫ VIRTUAL PIANO</span><span>88 KEYS · A0 — C8</span></div><div class="piano-scroll"><div id="piano" class="piano"></div></div><div class="hint">Computer keys: <kbd>1</kbd>–<kbd>m</kbd> play white notes · hold <kbd>Shift</kbd> for black notes · hold keys together for chords</div></section>
 </main>
 <footer><span>PIANOHUB © 2026</span><span>MAKE MUSIC TOGETHER ♥</span></footer>
 <script src="./app.js"></script>
