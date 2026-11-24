@@ -97,7 +97,7 @@ wss.on('connection', ws => {
       const roomName = cleanText(msg.roomName, 32) || 'Piano Jam';
       let code;
       do { code = makeCode(); } while (rooms.has(code));
-      const room = { code, name: roomName, clients: new Set(), players: new Map(), soundfonts: new Map() };
+      const room = { code, name: roomName, isPublic: msg.visibility === 'public', clients: new Set(), players: new Map(), soundfonts: new Map() };
       rooms.set(code, room);
       joinRoom(ws, room, name, msg.playerId, msg.color);
       publishPublicRooms();
@@ -154,7 +154,7 @@ wss.on('connection', ws => {
 function joinRoom(ws, room, name, id, color) {
   if (ws.roomCode) {
     const old = rooms.get(ws.roomCode);
-    if (old) { old.clients.delete(ws); if (ws.player) old.players.delete(ws.player.id); }
+    if (old) { old.clients.delete(ws); if (ws.player) { old.players.delete(ws.player.id); old.soundfonts.delete(ws.player.id); } if (old.clients.size === 0) rooms.delete(old.code); }
   }
   const player = {
     id: cleanText(id, 40) || Math.random().toString(36).slice(2),
