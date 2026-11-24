@@ -98,7 +98,9 @@
     if(defaultSynth)return defaultSynth;
     if(defaultSynthPromise)return defaultSynthPromise;
     defaultSynthPromise=(async()=>{
-      const response=await fetch('./assets/Full_Grand_Piano.sf2',{cache:'force-cache'});
+      const response = await fetch('/assets/Full_Grand_Piano.sf2?v=20261124-3', {
+  cache: 'no-store'
+});
       if(!response.ok)throw new Error(`Default piano SF2 failed to load (${response.status})`);
       const buffer=await response.arrayBuffer();
       defaultSynth=await createSynthFromBuffer(buffer,'Full Grand Piano');
