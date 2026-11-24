@@ -57,3 +57,16 @@ footer{border-top:1px solid #252231;padding:19px 5vw;display:flex;justify-conten
   body:has(#session:not(.hidden)) .piano-dock .hint { display:none; }
   body:has(#session:not(.hidden)) .sf2-heading span:not(.sf2-badge) { font-size:9px; }
 }
+
+/* Public/private lobby browser */
+.visibility-select{width:100%;margin-top:7px;padding:13px 14px;border:1px solid #383247;border-radius:8px;background:#171520;color:#e9e3f3;font:12px 'DM Sans';outline:none}
+.public-heading{display:flex;align-items:center;justify-content:space-between;margin:12px 0 9px;color:#d8d1e5;font-size:11px;font-weight:700}
+.refresh-button{border:1px solid #403751;border-radius:6px;background:#211c2c;color:#c7b5ff;padding:6px 9px;font-size:10px;cursor:pointer}
+.public-rooms{display:flex;flex-direction:column;gap:7px;max-height:230px;overflow:auto}
+.public-empty{padding:15px 12px;border:1px dashed #3a3448;border-radius:8px;color:#827b91;font-size:10px;line-height:1.6;text-align:center}
+.public-room{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 11px;border:1px solid #383148;border-radius:8px;background:#171520}
+.public-room-info{display:flex;min-width:0;flex-direction:column;gap:4px}
+.public-room-info b{overflow:hidden;color:#e7e0f2;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+.public-room-info span{color:#888195;font:9px 'DM Mono'}
+.public-join{flex:none;border:0;border-radius:6px;background:#7656ca;color:white;padding:7px 12px;font-size:10px;font-weight:700;cursor:pointer}
+.public-join:hover{background:#9271e4}

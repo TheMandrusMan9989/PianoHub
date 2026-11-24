@@ -6,6 +6,7 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
 const rooms = new Map();
+const connectedClients = new Set();
 const MAX_SF2_SIZE = 48 * 1024 * 1024;
 
 function send(ws, data) {
@@ -16,6 +17,13 @@ function broadcast(room, data, except) {
 }
 function cleanText(value, max) {
   return String(value || '').trim().slice(0, max);
+}
+function publishPublicRooms() {
+  const publicRooms = [...rooms.values()]
+    .filter(room => room.isPublic && room.clients.size > 0)
+    .map(room => ({ code:room.code, name:room.name, playerCount:room.clients.size }));
+  const message = { type:'public-rooms', rooms:publicRooms };
+  for (const client of connectedClients) send(client, message);
 }
 function makeCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -42,6 +50,8 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server, maxPayload: MAX_SF2_SIZE + 1024 });
 wss.on('connection', ws => {
+  connectedClients.add(ws);
+  send(ws, { type:'public-rooms', rooms:[...rooms.values()].filter(room => room.isPublic && room.clients.size > 0).map(room => ({ code:room.code, name:room.name, playerCount:room.clients.size })) });
   ws.roomCode = null;
   ws.player = null;
   ws.on('message', (raw, isBinary) => {
@@ -80,6 +90,8 @@ wss.on('connection', ws => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
 
+    if (msg.type === 'list-public') { publishPublicRooms(); return; }
+
     if (msg.type === 'create') {
       const name = cleanText(msg.name, 20) || 'Pianist';
       const roomName = cleanText(msg.roomName, 32) || 'Piano Jam';
@@ -88,6 +100,7 @@ wss.on('connection', ws => {
       const room = { code, name: roomName, clients: new Set(), players: new Map(), soundfonts: new Map() };
       rooms.set(code, room);
       joinRoom(ws, room, name, msg.playerId, msg.color);
+      publishPublicRooms();
       return;
     }
 
@@ -96,6 +109,7 @@ wss.on('connection', ws => {
       const room = rooms.get(code);
       if (!room) return send(ws, { type:'error', message:'That room code does not exist.' });
       joinRoom(ws, room, cleanText(msg.name, 20) || 'Pianist', msg.playerId, msg.color);
+      publishPublicRooms();
       return;
     }
 
@@ -125,6 +139,7 @@ wss.on('connection', ws => {
   });
 
   ws.on('close', () => {
+    connectedClients.delete(ws);
     const room = rooms.get(ws.roomCode);
     if (!room || !ws.player) return;
     room.clients.delete(ws);
@@ -132,6 +147,7 @@ wss.on('connection', ws => {
     room.soundfonts.delete(ws.player.id);
     broadcast(room, { type:'leave', playerId:ws.player.id });
     if (room.clients.size === 0) rooms.delete(room.code);
+    publishPublicRooms();
   });
 });
 
@@ -143,7 +159,8 @@ function joinRoom(ws, room, name, id, color) {
   const player = {
     id: cleanText(id, 40) || Math.random().toString(36).slice(2),
     name,
-    color: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#a78bfa'
+    color: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#a78bfa',
+    soundfontId: ''
   };
   ws.roomCode = room.code;
   ws.player = player;
@@ -153,9 +170,12 @@ function joinRoom(ws, room, name, id, color) {
   broadcast(room, { type:'join', player }, ws);
   // A newcomer receives the currently selected instrument for every existing player.
   for (const existing of room.players.values()) {
-    if (existing.id === player.id || !existing.soundfontId) continue;
-    const entry = room.soundfonts.get(existing.id)?.get(existing.soundfontId);
-    if (entry) { send(ws, { type:'soundfont-select', playerId:existing.id, soundfontId:existing.soundfontId }); ws.send(entry.packet); }
+    if (existing.id === player.id) continue;
+    send(ws, { type:'soundfont-select', playerId:existing.id, soundfontId:existing.soundfontId || '' });
+    if (existing.soundfontId) {
+      const entry = room.soundfonts.get(existing.id)?.get(existing.soundfontId);
+      if (entry) ws.send(entry.packet);
+    }
   }
 }
 

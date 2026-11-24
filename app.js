@@ -5,7 +5,7 @@
   const color = colors[Math.floor(Math.random()*colors.length)];
   let socket, room, me, players = [], muted = false, midiAccess;
   const active = new Map(), oscillators = new Map(), held = new Map();
-  let audio, soundfontSynth = null, loadingSf2 = false;
+  let audio, soundfontSynth = null, defaultSynth = null, defaultSynthPromise = null, loadingSf2 = false;
   const localSoundfonts = new Map(), synthForNote = new Map(), remoteSynths = new Map(), remoteLoading = new Set(), remoteSelected = new Map();
   // Full 88-key piano: A0 (MIDI 21) through C8 (MIDI 108).
   // Computer-key mapping covers the central five-octave range C2-C7;
@@ -35,16 +35,17 @@
     renderPlayers(); $('messages').innerHTML='<div class="empty">Say hi to the room 👋</div>';
     loadingSf2 = false;
     $('sf2-status').textContent=localSoundfonts.size ? `${localSoundfonts.size} personal SF2 file(s) available` : 'Your soundfont · other players hear your selected instrument';
-    initMIDI(); window.scrollTo(0,0);
+    ensureDefaultSynth().catch(error=>{console.error(error);$('sf2-status').textContent='Could not load bundled default piano';}); players.filter(p=>p.id!==playerId).forEach(p=>{remoteSelected.set(p.id,p.soundfontId||'');if(!p.soundfontId)loadRemoteDefault(p.id);}); initMIDI(); window.scrollTo(0,0);
   }
   function handle(msg){
+    if(msg.type==='public-rooms'){renderPublicRooms(msg.rooms||[]);return;}
     if(msg.type==='error'){showError(msg.message);return;}
     if(msg.type==='joined'){enter(msg);return;}
-    if(msg.type==='join'){if(!players.some(p=>p.id===msg.player.id))players.push(msg.player);renderPlayers();return;}
+    if(msg.type==='join'){if(!players.some(p=>p.id===msg.player.id))players.push(msg.player);remoteSelected.set(msg.player.id,msg.player.soundfontId||'');if(!msg.player.soundfontId)loadRemoteDefault(msg.player.id);renderPlayers();return;}
     if(msg.type==='leave'){players=players.filter(p=>p.id!==msg.playerId);remoteSelected.delete(msg.playerId);const old=remoteSynths.get(msg.playerId);if(old){try{old.disconnect();}catch(e){}remoteSynths.delete(msg.playerId);}renderPlayers();return;}
     if(msg.type==='note-on'){if(msg.player.id!==playerId){highlight(msg.note,msg.player);toneOnForPlayer(msg.player.id,msg.note,.72);}return;}
     if(msg.type==='note-off'){if(active.get(msg.note)?.id!==msg.player.id)return;highlightOff(msg.note);toneOffForPlayer(msg.player.id,msg.note);return;}
-    if(msg.type==='soundfont-select'){remoteSelected.set(msg.playerId,msg.soundfontId);if(!msg.soundfontId){const old=remoteSynths.get(msg.playerId);if(old){try{old.disconnect();}catch(e){}remoteSynths.delete(msg.playerId);}}$('sf2-status').textContent=`Your sound: ${soundfontSynth?'custom SF2':'default'} · other players use their own sounds`;return;}
+    if(msg.type==='soundfont-select'){remoteSelected.set(msg.playerId,msg.soundfontId||'');if(!msg.soundfontId)loadRemoteDefault(msg.playerId);$('sf2-status').textContent=`Your sound: ${soundfontSynth?'custom SF2':'Full Grand Piano'} · other players use their own sounds`;return;}
     if(msg.type==='chat')addMessage(msg.player,msg.text);
   }
   function renderPlayers(){
@@ -53,6 +54,11 @@
     $('player-list').innerHTML=players.map(p=>`<div class="player-row"><div class="avatar" style="width:27px;height:27px;background:${p.color}">${escapeHTML(p.name[0].toUpperCase())}</div><span>${escapeHTML(p.name)}${p.id===playerId?' (you)':''}</span><i style="background:${p.color}"></i></div>`).join('');
   }
   function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  function renderPublicRooms(rooms){
+    const list=$('public-rooms');
+    if(!rooms.length){list.innerHTML='<div class="public-empty">No public rooms right now. Create one and be the first! 🎹</div>';return;}
+    list.innerHTML=rooms.map(r=>`<div class="public-room"><div class="public-room-info"><b>${escapeHTML(r.name)}</b><span>${r.playerCount} ${r.playerCount===1?'player':'players'} · ${escapeHTML(r.code)}</span></div><button class="public-join" data-code="${escapeHTML(r.code)}">Join</button></div>`).join('');
+  }
   function addMessage(player,text){const empty=$('messages').querySelector('.empty');if(empty)empty.remove();const div=document.createElement('div');div.className='message';div.innerHTML=`<b style="color:${player.color}">${escapeHTML(player.name)}</b><p>${escapeHTML(text)}</p>`;$('messages').append(div);$('messages').scrollTop=$('messages').scrollHeight;}
   function buildPiano(){
     const piano=$('piano');
@@ -77,16 +83,41 @@
       }
     }catch(error){console.error("Could not receive a player's soundfont:",error);}
   }
+  async function createSynthFromBuffer(buffer,name){
+    audio=audio||new AudioContext();
+    const {WorkletSynthesizer}=await import('https://esm.sh/spessasynth_lib@4.4.10?bundle');
+    await audio.audioWorklet.addModule('https://cdn.jsdelivr.net/npm/spessasynth_lib@4.4.10/dist/spessasynth_processor.min.js');
+    const synth=new WorkletSynthesizer(audio);
+    await synth.soundBankManager.addSoundBank(buffer,name);
+    await synth.isReady;
+    synth.connect(audio.destination);
+    synth.programChange(0,0);
+    return synth;
+  }
+  async function ensureDefaultSynth(){
+    if(defaultSynth)return defaultSynth;
+    if(defaultSynthPromise)return defaultSynthPromise;
+    defaultSynthPromise=(async()=>{
+      const response=await fetch('./assets/Full_Grand_Piano.sf2',{cache:'force-cache'});
+      if(!response.ok)throw new Error(`Default piano SF2 failed to load (${response.status})`);
+      const buffer=await response.arrayBuffer();
+      defaultSynth=await createSynthFromBuffer(buffer,'Full Grand Piano');
+      return defaultSynth;
+    })().finally(()=>{defaultSynthPromise=null;});
+    return defaultSynthPromise;
+  }
+  async function loadRemoteDefault(ownerId){
+    try{
+      const synth=await ensureDefaultSynth();
+      remoteSynths.set(ownerId,synth);
+      console.info(`Loaded default grand piano for remote player ${ownerId}`);
+    }catch(error){console.error('Could not load default grand piano:',error);}
+  }
   async function loadRemoteSoundfont(ownerId,id,name,buffer){
     if(remoteLoading.has(ownerId))return;
     remoteLoading.add(ownerId);
     try{
-      audio=audio||new AudioContext();
-      const {WorkletSynthesizer}=await import('https://esm.sh/spessasynth_lib@4.4.10?bundle');
-      await audio.audioWorklet.addModule('https://cdn.jsdelivr.net/npm/spessasynth_lib@4.4.10/dist/spessasynth_processor.min.js');
-      const synth=new WorkletSynthesizer(audio);
-      await synth.soundBankManager.addSoundBank(buffer,name);
-      await synth.isReady;synth.connect(audio.destination);synth.programChange(0,0);
+      const synth=await createSynthFromBuffer(buffer,name);
       const previous=remoteSynths.get(ownerId);if(previous){try{previous.disconnect();}catch(e){}}
       remoteSynths.set(ownerId,synth);
       console.info(`Loaded ${name} for remote player ${ownerId}`);
@@ -103,7 +134,7 @@
     if(synth){try{synth.noteOff(0,note);}catch(e){}synthForNote.delete(key);return;}
     toneOff(note);
   }
-  function toneOn(note,velocity=.8){if(muted)return;try{if(soundfontSynth){if(audio&&audio.state==='suspended')audio.resume();soundfontSynth.noteOn(0,note,Math.max(1,Math.min(127,Math.round(velocity*127))));synthForNote.set(note,soundfontSynth);return;}audio=audio||new AudioContext();if(audio.state==='suspended')audio.resume();if(oscillators.has(note))return;const osc=audio.createOscillator(),gain=audio.createGain();osc.type='triangle';osc.frequency.value=440*Math.pow(2,(note-69)/12);gain.gain.setValueAtTime(.0001,audio.currentTime);gain.gain.exponentialRampToValueAtTime(Math.max(.02,velocity*.18),audio.currentTime+.015);osc.connect(gain);gain.connect(audio.destination);osc.start();oscillators.set(note,{osc,gain});}catch(e){}}
+  function toneOn(note,velocity=.8){if(muted)return;try{const activeSynth=soundfontSynth||defaultSynth;if(activeSynth){if(audio&&audio.state==='suspended')audio.resume();activeSynth.noteOn(0,note,Math.max(1,Math.min(127,Math.round(velocity*127))));synthForNote.set(note,activeSynth);return;}audio=audio||new AudioContext();if(audio.state==='suspended')audio.resume();if(oscillators.has(note))return;const osc=audio.createOscillator(),gain=audio.createGain();osc.type='triangle';osc.frequency.value=440*Math.pow(2,(note-69)/12);gain.gain.setValueAtTime(.0001,audio.currentTime);gain.gain.exponentialRampToValueAtTime(Math.max(.02,velocity*.18),audio.currentTime+.015);osc.connect(gain);gain.connect(audio.destination);osc.start();oscillators.set(note,{osc,gain});}catch(e){}}
   function toneOff(note){const usedSynth=synthForNote.get(note);if(usedSynth){try{usedSynth.noteOff(0,note);}catch(e){}synthForNote.delete(note);return;}const item=oscillators.get(note);if(!item)return;try{item.gain.gain.cancelScheduledValues(audio.currentTime);item.gain.gain.setTargetAtTime(.0001,audio.currentTime,.04);item.osc.stop(audio.currentTime+.18);}catch(e){}oscillators.delete(note);}
   function highlight(note,player=me){active.set(note,player);const key=$(`note-${note}`);if(key){key.classList.add('pressed');key.style.setProperty('--unused',player.color);key.style.background=key.classList.contains('white-key')?`linear-gradient(180deg,${player.color},#c9b5ff)`:player.color;}}
   function highlightOff(note){active.delete(note);const key=$(`note-${note}`);if(key){key.classList.remove('pressed');key.style.background='';}}
@@ -128,7 +159,7 @@
   }
   function refreshSoundfontSelect(selectedId){
     const select=$('sf2-select');select.innerHTML='';
-    const defaultOption=document.createElement('option');defaultOption.value='';defaultOption.textContent='Default sound';select.append(defaultOption);
+    const defaultOption=document.createElement('option');defaultOption.value='';defaultOption.textContent='Full Grand Piano (default)';select.append(defaultOption);
     for(const [id,entry] of localSoundfonts){const option=document.createElement('option');option.value=id;option.textContent=entry.name;select.append(option);}
     select.value=selectedId||'';
   }
@@ -151,7 +182,7 @@
   });
   $('sf2-select').addEventListener('change',async event=>{
     const id=event.target.value;
-    if(!id){const previous=soundfontSynth;soundfontSynth=null;if(previous){try{previous.disconnect();}catch(e){}}$('sf2-status').textContent='Using default sound · others still hear your notes';send({type:'soundfont-select',soundfontId:''});return;}
+    if(!id){const previous=soundfontSynth;soundfontSynth=null;if(previous){try{previous.disconnect();}catch(e){}}try{await ensureDefaultSynth();$('sf2-status').textContent='Full Grand Piano · selected for you';}catch(error){console.error(error);$('sf2-status').textContent='Could not load default piano';}send({type:'soundfont-select',soundfontId:''});return;}
     await loadPersonalSoundfont(id);
     send({type:'soundfont-select',soundfontId:id});
   });
@@ -167,8 +198,10 @@
   }
   function attachMIDI(){if(!midiAccess)return;const input=midiAccess.inputs.get($('midi-select').value)||midiAccess.inputs.values().next().value;if(!input)return;input.onmidimessage=e=>{const [status,note,velocity]=e.data,cmd=status&0xf0;if(cmd===0x90&&velocity>0)noteOn(note,velocity/127);else if(cmd===0x80||(cmd===0x90&&velocity===0))noteOff(note);};}
   $('midi-select').addEventListener('change',attachMIDI);
-  $('create').onclick=async()=>{audio=audio||new AudioContext();audio.resume().catch(()=>{});const name=$('nickname').value.trim()||'Pianist';localStorage.setItem('pianohub-name',name);showError('');try{await connect();send({type:'create',name,roomName:$('roomname').value,playerId,color});}catch(e){showError(e.message+' Run npm start on the host computer first.');}};
-  $('join').onclick=async()=>{audio=audio||new AudioContext();audio.resume().catch(()=>{});const name=$('nickname').value.trim()||'Pianist',code=$('code').value.trim().toUpperCase();if(!code){showError('Enter a room code.');return;}localStorage.setItem('pianohub-name',name);showError('');try{await connect();send({type:'join',name,code,playerId,color});}catch(e){showError(e.message);}};
+  $('create').onclick=async()=>{audio=audio||new AudioContext();audio.resume().catch(()=>{});const name=$('nickname').value.trim()||'Pianist';localStorage.setItem('pianohub-name',name);showError('');try{if(!socket||socket.readyState!==WebSocket.OPEN)await connect();send({type:'create',name,roomName:$('roomname').value,visibility:$('visibility').value,playerId,color});}catch(e){showError(e.message+' Run npm start on the host computer first.');}};
+  $('join').onclick=async()=>{audio=audio||new AudioContext();audio.resume().catch(()=>{});const name=$('nickname').value.trim()||'Pianist',code=$('code').value.trim().toUpperCase();if(!code){showError('Enter a room code.');return;}localStorage.setItem('pianohub-name',name);showError('');try{if(!socket||socket.readyState!==WebSocket.OPEN)await connect();send({type:'join',name,code,playerId,color});}catch(e){showError(e.message);}};
+  $('refresh-public').onclick=async()=>{try{if(!socket||socket.readyState!==WebSocket.OPEN)await connect();send({type:'list-public'});}catch(e){showError(e.message);}};
+  $('public-rooms').addEventListener('click',async event=>{const button=event.target.closest('.public-join');if(!button)return;audio=audio||new AudioContext();audio.resume().catch(()=>{});const name=$('nickname').value.trim()||'Pianist';localStorage.setItem('pianohub-name',name);showError('');try{if(!socket||socket.readyState!==WebSocket.OPEN)await connect();send({type:'join',name,code:button.dataset.code,playerId,color});}catch(e){showError(e.message);}});
   $('leave').onclick=()=>{if(socket)socket.close();socket=null;room=null;active.forEach((p,n)=>toneOff(n));active.clear();$('session').classList.add('hidden');$('lobby').classList.remove('hidden');$('lobby-error').textContent='';};
   $('copy').onclick=async()=>{try{await navigator.clipboard.writeText(room.code);$('copy').textContent='Copied!';setTimeout(()=>$('copy').textContent=room.code+' ⧉ Invite',1200);}catch(e){$('copy').textContent=room.code;}};
   $('mute').onclick=()=>{muted=!muted;$('mute').textContent=muted?'◖ Sound off':'◖ Sound on';if(muted){[...oscillators.keys()].forEach(toneOff);}};
@@ -179,4 +212,5 @@
   window.addEventListener('blur',()=>{held.forEach(note=>noteOff(note));held.clear();});
   $('nickname').value=localStorage.getItem('pianohub-name')||'';
   buildPiano();
+  connect().then(()=>send({type:'list-public'})).catch(()=>{ $('public-rooms').innerHTML='<div class="public-empty">Could not load rooms. Try refreshing.</div>'; });
 })();
